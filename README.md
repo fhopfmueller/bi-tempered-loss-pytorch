@@ -1,1 +1,1 @@
-# by-tempered-loss-pytorch
+# bi-tempered-loss-pytorch
