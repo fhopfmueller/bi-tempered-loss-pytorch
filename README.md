@@ -1,4 +1,4 @@
-# bi-tempered-loss-pytorch
+# Bi-tempered logistic loss: unofficial pytorch port
 
 Unofficial port from tensorflow to pytorch of parts of google's https://github.com/google/bi-tempered-loss, paper at https://arxiv.org/pdf/1906.03361.pdf.
 
