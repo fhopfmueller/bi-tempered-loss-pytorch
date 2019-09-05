@@ -5,21 +5,32 @@ from bi_tempered_loss_pytorch import *
 
 def test_normalization():
     """Test the normalization constant."""
-    activations = torch.randn((100, 50000), dtype=torch.double, requires_grad=True)
-    normalization_constants = compute_normalization(activations, 1.01, num_iters=5)
-    assert normalization_constants.shape == (100, 1)
-    probabilities = exp_t(activations - normalization_constants, 1.01)
-    assert (probabilities.sum(dim=-1) - torch.ones(100, dtype=torch.double)).abs().max() < 1e-5
+    for t in [2, 1.1]:
+        shape = (10, 1000)
 
-    activations = torch.randn((10, 50), dtype=torch.double, requires_grad=True)
+        activations = 10*torch.randn(shape, dtype=torch.double, requires_grad=True)
+        normalization_constants = compute_normalization(activations, t, num_iters=5)
+        assert normalization_constants.shape == shape[:-1] + (1,)
+        probabilities = exp_t(activations - normalization_constants, t)
+        assert (probabilities.sum(dim=-1) - torch.ones(shape[:-1], dtype=torch.double)).abs().max() < 1e-5, probabilities.sum(dim=-1)
 
-    grad_test = gradcheck(
-            lambda activations: compute_normalization(activations, 1.01, num_iters=5),
-            activations,
-            eps=1e-6,
-            atol=1e-5)
-    assert grad_test
-    print('normalization constant tests passed')
+        activations = .1 * torch.randn((2, 5), dtype=torch.double, requires_grad=True)
+
+        grad_test = gradcheck(
+                lambda activations: compute_normalization(activations, t, num_iters=5),
+                activations,
+                eps=1e-4,
+                atol=1e-4)
+        assert grad_test
+        print(f'normalization constant tests passed for t={t}')
+    for t in [.9, .1]:
+        shape = (1, 1000)
+        activations = 10*torch.randn(shape, dtype=torch.double, requires_grad=True)
+        normalization_constants = compute_normalization(activations, t, num_iters=20)
+        assert normalization_constants.shape == shape[:-1] + (1,)
+        probabilities = exp_t(activations - normalization_constants, t)
+        assert (probabilities.sum(dim=-1) - torch.ones(shape[:-1], dtype=torch.double)).abs().max() < 1e-5, probabilities.sum(dim=-1)
+        print(f"normalization constant tests passed for t={t}. don't check gradient against numerical since binary search doesn't give a good numerical gradient")
 
 def test_limit_case_logistic_loss():
     """Test for checking if t1 = t2 = 1.0 yields the logistic loss."""
@@ -55,15 +66,17 @@ def test_loss_value():
     print('test of loss against precomputed value passed')
 
 def test_loss_gradient():
-    labels = (10*torch.randn( (10, 10), dtype=torch.double)).softmax(dim=1)
-    activations = torch.randn((10, 10), requires_grad=True, dtype=torch.double)
-    grad_test = gradcheck(
-            lambda activations: bi_tempered_logistic_loss(
-                activations, labels, 0.5, 1.5, reduction='none', num_iters=10),
-            activations,
-            eps=1e-6,
-            atol=1e-5)
-    assert grad_test
+    for t1 in [.1, .8, 1.]:
+        for t2 in [.8, 1., 1.2, 2.]:
+            labels = (10*torch.randn( (1, 10), dtype=torch.double)).softmax(dim=1)
+            activations = torch.randn((1, 10), requires_grad=True, dtype=torch.double)
+            grad_test = gradcheck(
+                    lambda activations: bi_tempered_logistic_loss(
+                        activations, labels, t1, t2, reduction='none', num_iters=30),
+                    activations,
+                    eps=1e-4,
+                    atol=1e-4)
+            assert grad_test
     print('test of loss gradient passed')
 
 def test_label_smoothing():
@@ -75,6 +88,29 @@ def test_label_smoothing():
     assert (actual_loss - torch.Tensor([0.76652711, 0.08627685, 1.35443510])).abs().max() < 1e-5
     print('label smoothing test passed')
 
+def test_binary_logistic_loss():
+    """Test if binary logistic loss reduces correctly to logistic loss"""
+    labels_two_categories = torch.randn(10, 2).softmax(dim=1)
+    labels_binary = labels_two_categories[:, 0]
+    activations_binary = torch.randn(10)
+    activations_two_categories = torch.zeros(10, 2)
+    activations_two_categories[:, 0] = activations_binary
+
+    binary_loss = bi_tempered_binary_logistic_loss(activations_binary, labels_binary, .8, 1.2, reduction='none')
+    cat_loss = bi_tempered_logistic_loss(activations_two_categories, labels_two_categories, .8, 1.2, reduction='none')
+    assert (binary_loss - cat_loss).abs().max() < 1e-5
+    print("Test if binary logistic loss reduces correctly to logistic loss passed")
+
+def test_tempered_sigmoid():
+    """test tempered sigmoid against precomputed"""
+    activations = torch.Tensor([.0, 3., 6.])
+    sigmoid_t_1 = tempered_sigmoid(activations, 1.0)
+    assert (sigmoid_t_1 - activations.sigmoid()).abs().max() < 1e-5
+
+    sigmoid_t_4 = tempered_sigmoid(activations, 4.0)
+    expected_sigmoid_probabilities_t_4 = torch.Tensor([0.5, 0.58516014, 0.6421035])
+    assert (sigmoid_t_4 - expected_sigmoid_probabilities_t_4).abs().max() < 1e-5
+    print('tempered sigmoid tests passed')
 
 if __name__=='__main__':
     test_normalization()
@@ -82,3 +118,5 @@ if __name__=='__main__':
     test_loss_value()
     test_loss_gradient()
     test_label_smoothing()
+    test_binary_logistic_loss()
+    test_tempered_sigmoid()
